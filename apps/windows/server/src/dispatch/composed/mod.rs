@@ -1,10 +1,15 @@
 //! 组句的展示状态：缓冲变化时重查候选并重建 [`Composed`]，云端词异步并入，高亮 / 翻页，按状态生成给 DLL 的帧。
 
+mod sentence_translation;
 mod state;
 
-use qingjian_core::{Candidate, CandidateLayout, CandidateList, CloudWord, Query};
+use qingjian_core::{
+    Candidate, CandidateKind, CandidateLayout, CandidateList, CloudWord, Language, Query, Sense,
+    Translation,
+};
 use qingjian_platform::protocol::{Frame, PROTOCOL_VERSION, PreeditKind, PreeditSegment};
 
+use self::sentence_translation::SentenceTranslation;
 pub(super) use self::state::{Composed, TypedKeys};
 use super::Router;
 
@@ -14,9 +19,9 @@ impl Router {
         self.highlight = 0;
         self.navigated = false;
         self.sentence = None;
+        self.cancel_prediction();
         if self.engine.composition().is_empty() {
             self.composed = None;
-            self.cancel_prediction();
             self.stop_rescoring();
             return;
         }
@@ -29,14 +34,31 @@ impl Router {
             Some((items, preedit, cursor, typed_keys)) => {
                 let layout =
                     CandidateLayout::new(items, self.config.page_size, self.config.cloud_slots);
-                if self.engine.prediction_enabled() {
+                if self.config.cloud_enabled && self.engine.prediction_enabled() {
                     self.engine.request_prediction(None, layout.local());
                 }
+                let sentence_translation = (self.config.sentence_translation
+                    && self.engine.learning_language() != Language::Chinese)
+                    .then(|| {
+                        layout
+                            .local()
+                            .iter()
+                            .find(|candidate| candidate.kind == CandidateKind::Sentence)
+                    })
+                    .flatten()
+                    .and_then(|candidate| {
+                        self.engine
+                            .request_translation(&candidate.text)
+                            .map(|sequence| {
+                                SentenceTranslation::pending(candidate.text.clone(), sequence)
+                            })
+                    });
                 Composed::Candidates {
                     preedit,
                     cursor,
                     typed_keys,
                     layout,
+                    sentence_translation,
                 }
             }
             None => {
@@ -69,6 +91,33 @@ impl Router {
                     tracing::info!("翻译选中文字：云端没有给出译文");
                     self.translation = None;
                 }
+            }
+            return;
+        }
+        let is_sentence_translation = matches!(
+            &self.composed,
+            Some(Composed::Candidates {
+                sentence_translation: Some(annotation),
+                ..
+            }) if annotation.sequence == prediction.sequence
+        );
+        if is_sentence_translation {
+            if let Some(Composed::Candidates {
+                sentence_translation: Some(annotation),
+                ..
+            }) = self.composed.as_mut()
+            {
+                annotation.translation = prediction.sentence.map(|text| {
+                    Translation::new(
+                        self.engine.learning_language(),
+                        vec![Sense {
+                            part_of_speech: None,
+                            text,
+                            reading: None,
+                            fresh: false,
+                        }],
+                    )
+                });
             }
             return;
         }
@@ -218,6 +267,7 @@ impl Router {
                 preedit,
                 cursor,
                 layout,
+                sentence_translation,
                 ..
             }) => {
                 let page_size = self.config.page_size;
@@ -230,6 +280,17 @@ impl Router {
                     .collect();
                 let mut candidates = CandidateList { items };
                 self.engine.annotate(&mut candidates);
+                if let Some(annotation) = sentence_translation
+                    && let Some(translation) = &annotation.translation
+                {
+                    for candidate in &mut candidates.items {
+                        if candidate.kind == CandidateKind::Sentence
+                            && candidate.text == annotation.text
+                        {
+                            candidate.translation = Some(translation.clone());
+                        }
+                    }
+                }
                 Frame {
                     preedit: preedit.clone(),
                     preedit_mode: self.config.preedit,

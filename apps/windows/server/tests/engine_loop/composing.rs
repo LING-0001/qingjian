@@ -1,6 +1,66 @@
 //! 中文组句：出候选、选词、上屏、翻页键、直输段、失焦与学习落盘。
 
 use crate::support::*;
+use qingjian_core::{
+    CandidateKind, Prediction, PredictionKind, PredictionPolicy, PredictionRequest, Predictor,
+};
+
+struct SentenceTranslator {
+    replies: Vec<Prediction>,
+}
+
+impl Predictor for SentenceTranslator {
+    fn policy(&self) -> PredictionPolicy {
+        PredictionPolicy {
+            slots: 0,
+            max_items: 0,
+            sentence: false,
+            ..PredictionPolicy::default()
+        }
+    }
+
+    fn submit(&mut self, request: PredictionRequest) {
+        if request.kind == PredictionKind::Translate {
+            self.replies.push(Prediction {
+                sequence: request.sequence,
+                words: Vec::new(),
+                sentence: Some("It seems not to work.".to_owned()),
+            });
+        }
+    }
+
+    fn poll(&mut self) -> Option<Prediction> {
+        self.replies.pop()
+    }
+}
+
+#[test]
+fn sentence_candidates_receive_an_async_translation_without_cloud_completion() {
+    let mut router = router_with(RouterConfig {
+        cloud_slots: 0,
+        sentence_translation: true,
+        ..RouterConfig::default()
+    });
+    router
+        .engine_mut()
+        .set_predictor(Box::new(SentenceTranslator {
+            replies: Vec::new(),
+        }));
+
+    let (_, _, frame) = type_letters(&mut router, "xiangkaifa");
+    let sentence = frame
+        .candidates
+        .items
+        .iter()
+        .find(|candidate| candidate.kind == CandidateKind::Sentence)
+        .expect("应有本地整句候选「想开发」");
+    assert_eq!(sentence.text, "想开发");
+    assert_eq!(
+        sentence.translation.as_ref().unwrap().senses()[0].text,
+        "It seems not to work."
+    );
+    assert_eq!(frame.sentence, None, "关闭整句补全时不应显示补全文本");
+}
 
 #[test]
 fn typing_pinyin_shows_candidates() {

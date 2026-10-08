@@ -194,6 +194,7 @@ impl Router {
             cursor,
             typed_keys,
             layout,
+            ..
         }) = self.composed.as_mut()
         else {
             return;
