@@ -64,7 +64,7 @@ impl Router {
                     }
                     self.engine.cancel_sentence_translation();
                     self.engine
-                        .request_translation(&candidate.text)
+                        .request_sentence_translation(&candidate.text)
                         .map(|sequence| {
                             SentenceTranslation::pending(candidate.text.clone(), sequence)
                         })
@@ -168,6 +168,28 @@ impl Router {
         let local = layout.local().to_vec();
         let surrounding = self.surrounding_for_prediction();
         self.engine.request_prediction(surrounding, &local);
+    }
+
+    /// 给当前的本地整句候选补上已经返回的云端译文。
+    ///
+    /// 候选布局保留查询原样；画帧、点击和译词快捷键各自拿副本时统一补这一层，
+    /// 才不会让同一条译文只有显示、不能上屏。
+    pub(super) fn annotate_sentence_translation(&self, candidates: &mut CandidateList) {
+        let Some(Composed::Candidates {
+            sentence_translation: Some(annotation),
+            ..
+        }) = &self.composed
+        else {
+            return;
+        };
+        let Some(translation) = &annotation.translation else {
+            return;
+        };
+        for candidate in &mut candidates.items {
+            if candidate.kind == CandidateKind::Sentence && candidate.text == annotation.text {
+                candidate.translation = Some(translation.clone());
+            }
+        }
     }
 
     /// DLL 报来的光标前文包成云联想要的形状；没有就 `None`（Engine 只靠拼音猜）。
@@ -314,7 +336,6 @@ impl Router {
                 preedit,
                 cursor,
                 layout,
-                sentence_translation,
                 ..
             }) => {
                 let page_size = self.config.page_size;
@@ -327,17 +348,7 @@ impl Router {
                     .collect();
                 let mut candidates = CandidateList { items };
                 self.engine.annotate(&mut candidates);
-                if let Some(annotation) = sentence_translation
-                    && let Some(translation) = &annotation.translation
-                {
-                    for candidate in &mut candidates.items {
-                        if candidate.kind == CandidateKind::Sentence
-                            && candidate.text == annotation.text
-                        {
-                            candidate.translation = Some(translation.clone());
-                        }
-                    }
-                }
+                self.annotate_sentence_translation(&mut candidates);
                 Frame {
                     preedit: preedit.clone(),
                     preedit_mode: self.config.preedit,

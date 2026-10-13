@@ -5,10 +5,19 @@ use qingjian_core::{
     CandidateKind, Prediction, PredictionKind, PredictionPolicy, PredictionRequest, Predictor,
 };
 
-struct SentenceTranslator {
+pub(crate) struct SentenceTranslator {
     replies: Vec<Prediction>,
 
     submitted: Arc<Mutex<Vec<PredictionRequest>>>,
+}
+
+impl SentenceTranslator {
+    pub(crate) fn new(submitted: Arc<Mutex<Vec<PredictionRequest>>>) -> Self {
+        Self {
+            replies: Vec::new(),
+            submitted,
+        }
+    }
 }
 
 impl Predictor for SentenceTranslator {
@@ -55,10 +64,7 @@ fn sentence_candidates_receive_an_async_translation_without_cloud_completion() {
     });
     router
         .engine_mut()
-        .set_predictor(Box::new(SentenceTranslator {
-            replies: Vec::new(),
-            submitted: submitted.clone(),
-        }));
+        .set_predictor(Box::new(SentenceTranslator::new(submitted.clone())));
 
     let (_, _, frame) = type_letters(&mut router, "xiangkaifa");
     let sentence = frame
@@ -98,10 +104,7 @@ fn disabled_sentence_translation_never_sends_a_translation_request() {
     });
     router
         .engine_mut()
-        .set_predictor(Box::new(SentenceTranslator {
-            replies: Vec::new(),
-            submitted: submitted.clone(),
-        }));
+        .set_predictor(Box::new(SentenceTranslator::new(submitted.clone())));
 
     let _ = type_letters(&mut router, "xiangkaifa");
 

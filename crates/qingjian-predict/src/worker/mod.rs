@@ -4,6 +4,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
 use qingjian_core::{Prediction, PredictionKind, PredictionRequest};
+use tokio::task::JoinSet;
 
 use crate::prompt::Reply;
 
@@ -95,11 +96,21 @@ impl Worker {
                     self.finish(request, reply, start);
                 }
                 [first, second] => {
-                    let (first_reply, second_reply) = runtime.block_on(async {
-                        tokio::join!(self.client.complete(first), self.client.complete(second),)
+                    let mut requests = runtime.block_on(async {
+                        let mut requests = JoinSet::new();
+                        for request in [first.clone(), second.clone()] {
+                            let client = self.client.clone();
+                            requests.spawn(async move {
+                                let result = client.complete(&request).await;
+                                (request, result)
+                            });
+                        }
+                        requests
                     });
-                    self.finish(first, first_reply, start);
-                    self.finish(second, second_reply, start);
+                    while let Some(result) = runtime.block_on(requests.join_next()) {
+                        let (request, reply) = result.expect("预测任务不应 panic");
+                        self.finish(&request, reply, start);
+                    }
                 }
                 _ => unreachable!("防抖只保留一条组句请求和一条翻译请求"),
             }
@@ -145,7 +156,9 @@ impl Worker {
                 Ok(Some(newer)) => {
                     match newer.kind {
                         PredictionKind::Translate => translation = Some(newer),
-                        PredictionKind::Compose | PredictionKind::Question => composition = Some(newer),
+                        PredictionKind::Compose | PredictionKind::Question => {
+                            composition = Some(newer)
+                        }
                     }
                     changed = Instant::now();
                 }
