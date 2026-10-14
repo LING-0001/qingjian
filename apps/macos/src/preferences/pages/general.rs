@@ -34,6 +34,12 @@ pub struct GeneralPage {
     /// 候选后面一次最多配几个 emoji。
     emoji: Retained<NSPopUpButton>,
 
+    /// 候选后面一次最多配几个颜文字。
+    kaomoji: Retained<NSPopUpButton>,
+
+    /// 候选后面一次最多配几个符号。
+    symbols: Retained<NSPopUpButton>,
+
     /// 英文模式也给候选。
     english: Retained<NSButton>,
 
@@ -45,6 +51,7 @@ pub struct GeneralPage {
 
     /// 中英混输时中文候选排在英文词前。
     chinese_first: Retained<NSButton>,
+    auto_space: Retained<NSButton>,
 
     /// 中文模式下 Shift+字母进组句。
     shift_letter: Retained<NSButton>,
@@ -159,6 +166,22 @@ impl GeneralPage {
             Setting::Emoji,
             target,
         );
+        let kaomoji = row_popup(
+            layout,
+            mtm,
+            "候选后面的颜文字",
+            &emoji_titles,
+            Setting::Kaomoji,
+            target,
+        );
+        let symbols = row_popup(
+            layout,
+            mtm,
+            "候选后面的符号",
+            &emoji_titles,
+            Setting::Symbols,
+            target,
+        );
         let english = checkbox(mtm, "英文候选与补全", Setting::EnglishCandidates, target);
         row_checkbox(layout, &english);
         note(
@@ -202,6 +225,18 @@ impl GeneralPage {
             mtm,
             "勾上后整段输入是英文词时（hello、key）英文词排第二，空格上屏的仍是中文；不勾（缺省）拼音不成立的输入英文词排第一。",
         );
+        let auto_space = checkbox(
+            mtm,
+            "中文与英文、数字之间自动加空格",
+            Setting::AutoSpace,
+            target,
+        );
+        row_checkbox(layout, &auto_space);
+        note(
+            layout,
+            mtm,
+            "「用Go写了30行」上屏成「用 Go 写了 30 行」。只在汉字与半角字母、数字相邻时补，标点两侧不补；点了别处、读不到应用里的文字时不补。",
+        );
         let shift_letter = checkbox(
             mtm,
             "输入拼音时按住 Shift 的字母也进组句",
@@ -222,10 +257,13 @@ impl GeneralPage {
             shuangpin_raw_preedit,
             traditional,
             emoji,
+            kaomoji,
+            symbols,
             english,
             english_only_in_apps,
             english_in_chinese,
             chinese_first,
+            auto_space,
             shift_letter,
             languages: languages.to_vec(),
             punctuation,
@@ -266,6 +304,8 @@ impl GeneralPage {
             .setEnabled(general.scheme().is_shuangpin());
         set_checked(&self.traditional, general.traditional);
         select(&self.emoji, Some(usize::from(general.emoji.get())));
+        select(&self.kaomoji, Some(usize::from(general.kaomoji.get())));
+        select(&self.symbols, Some(usize::from(general.symbols.get())));
         set_checked(&self.english, general.english_candidates);
         set_checked(
             &self.english_only_in_apps,
@@ -276,6 +316,7 @@ impl GeneralPage {
         set_checked(&self.english_in_chinese, general.english_in_chinese);
         set_checked(&self.chinese_first, general.chinese_first);
         self.chinese_first.setEnabled(general.english_in_chinese);
+        set_checked(&self.auto_space, general.auto_space);
         set_checked(&self.shift_letter, general.shift_letter.compose());
     }
 }

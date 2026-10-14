@@ -26,7 +26,12 @@ impl Host {
         self.engine
             .set_emoji_limit(usize::from(config.general.emoji.get()));
         self.engine
+            .set_kaomoji_limit(usize::from(config.general.kaomoji.get()));
+        self.engine
+            .set_symbol_limit(usize::from(config.general.symbols.get()));
+        self.engine
             .set_english_in_chinese(config.general.english_in_chinese);
+        self.engine.set_auto_space(config.general.auto_space);
         self.engine
             .set_shift_letter_compose(config.general.shift_letter.compose());
         self.apply_scheme(config.general.scheme(), config.general.wubi());

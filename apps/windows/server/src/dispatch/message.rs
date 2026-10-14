@@ -135,6 +135,7 @@ impl Router {
         }
         if self.config.cloud_enabled
             && self.engine.composition().is_empty()
+            && !self.panel_open()
             && self.engine.prediction_enabled()
             && self.matches_translate_combo(&event)
         {

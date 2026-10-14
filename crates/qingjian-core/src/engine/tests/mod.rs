@@ -10,9 +10,11 @@ mod emoji;
 mod english;
 mod learning;
 mod lookup;
+mod panel;
 mod privacy;
 mod raw;
 mod shuangpin;
+mod spacing;
 mod zhuyin;
 
 use std::collections::HashMap;
